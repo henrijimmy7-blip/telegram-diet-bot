@@ -1,7 +1,7 @@
 const { Bot } = require('grammy');
 const http = require('http');
 
-const BOT_TOKEN = '9148283226:AAFCIHcv9OuVzaBMfC1Is1Uptd473SdofzM';
+const BOT_TOKEN = '9016404137:AAEj85yDR8ax_WSJTccSKjpFr9FnXk8bsv8';
 const ADMIN_CHAT_ID = 7279065642; // آیدی عددی شما
 
 const bot = new Bot(BOT_TOKEN);
