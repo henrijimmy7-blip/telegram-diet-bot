@@ -1,24 +1,63 @@
 import { Bot } from 'grammy';
 import http from 'http';
 
-const bot = new Bot('9016404137:AAEj85yDR8ax_WSJTccSKjpFr9FnXk8bsv8');
+const BOT_TOKEN = '9148283226:AAFCIHcv9OuVzaBMfC1Is1Uptd473SdofzM';
+const ADMIN_CHAT_ID = 7279065642; // آیدی عددی شما
 
-// دستور شروع ربات
+const bot = new Bot(BOT_TOKEN);
+
+// دستور شروع برای کاربران
 bot.command('start', async (ctx) => {
-    await ctx.reply('سلام! خوش آمدید. 🥗\nبرای ثبت درخواست رژیم غذایی، لطفاً سن خود را ارسال کنید:');
+    await ctx.reply('سلام! خوش آمدید. 🥗\nلطفاً سن، وزن و هدف خود از رژیم غذایی را بنویسید و ارسال کنید تا برای متخصص ارسال شود:');
 });
 
-// دریافت پیام و سن کاربر
+// مدیریت پیام‌ها
 bot.on('message:text', async (ctx) => {
-    const age = ctx.message.text;
-    await ctx.reply(`✅ درخواست رژیم شما ثبت شد!\nسن ثبت‌شده: ${age}\nبه زودی برنامه شما آماده می‌شود.`);
+    const userId = ctx.from.id;
+    const userName = ctx.from.first_name || 'کاربر';
+    const text = ctx.message.text;
+
+    // اگر پیام از طرف خودِ شما (مالک ربات) ارسال شده باشد
+    if (userId === ADMIN_CHAT_ID) {
+        if (ctx.message.reply_to_message) {
+            const replyText = ctx.message.reply_to_message.text;
+            const match = replyText && replyText.match(/ID:\s*(\d+)/);
+            
+            if (match && match[1]) {
+                const targetUserId = match[1];
+                try {
+                    await bot.api.sendMessage(targetUserId, `🥗 **پاسخ رژیم غذایی شما از طرف متخصص:**\n\n${text}`);
+                    await ctx.reply('✅ رژیم با موفقیت برای کاربر ارسال شد.');
+                } catch (err) {
+                    await ctx.reply('❌ خطا در ارسال پیام به کاربر.');
+                }
+                return;
+            }
+        }
+        await ctx.reply('⚠️ برای ارسال رژیم، لطفاً روی پیام درخواست کاربر در چت ربات **Reply (پاسخ)** کنید و متن رژیم را بفرستید.');
+        return;
+    }
+
+    // اگر پیام از طرف کاربر عادی باشد
+    await ctx.reply('✅ درخواست شما با موفقیت برای متخصص ارسال شد. به زودی برنامه رژیم خود را دریافت خواهید کرد.');
+
+    // ارسال درخواست به ادمین (شما)
+    try {
+        await bot.api.sendMessage(
+            ADMIN_CHAT_ID,
+            `📩 **درخواست جدید رژیم غذایی!**\n\n👤 نام: ${userName}\n🆔 ID: ${userId}\n💬 متن درخواست:\n${text}`,
+            { parse_mode: 'Markdown' }
+        );
+    } catch (err) {
+        console.error('خطا در ارسال به ادمین:', err);
+    }
 });
 
-// روشن کردن ربات با روش Polling
+// روشن کردن ربات
 bot.start();
-console.log('ربات تلگرام روشن شد...');
+console.log('ربات آماده به کار است...');
 
-// ساخت یک سرور HTTP ساده برای اینکه Render ارور ندهد
+// سرور وب برای Render
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Bot is running successfully!');
