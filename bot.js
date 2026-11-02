@@ -9,15 +9,19 @@ const bot = new Bot(BOT_TOKEN);
 const app = express();
 app.use(express.json());
 
-// ۱. دستور شروع و دکمه باز کردن مینی‌اپ
+// پایگاه داده موقت برای ذخیره کاربران و برنامه‌های ارسالی ادمین
+let usersSubmissions = [];
+let assignedPlans = {}; // کلید: userId، مقدار: { diet, workout }
+
+// ۱. دستور شروع
 bot.command('start', async (ctx) => {
-    const keyboard = new InlineKeyboard().webApp('🚀 ورود به اپلیکیشن رژیم و ورزش', `${APP_URL}/miniapp`);
-    await ctx.reply('سلام! به کلینیک تخصصی رژیم و تناسب اندام خوش آمدید. 🥗🏋️‍♂️\nبرای مشاهده برنامه غذایی، برنامه ورزشی و ثبت مشخصات، روی دکمه زیر کلیک کنید:', {
+    const keyboard = new InlineKeyboard().webApp('✨ ورود به کلینیک تخصصی تناسب اندام', `${APP_URL}/miniapp`);
+    await ctx.reply('سلام! به کلینیک تخصصی رژیم و ورزش خوش آمدید. 🥗🏋️‍♂️\nبرای دریافت یا مشاهده برنامه اختصاصی خود، روی دکمه زیر کلیک کنید:', {
         reply_markup: keyboard
     });
 });
 
-// ۲. سیستم پاسخ‌دهی ادمین به کاربران با Reply
+// ۲. پاسخ ادمین با Reply در تلگرام
 bot.on('message:text', async (ctx) => {
     const userId = ctx.from.id;
     const text = ctx.message.text;
@@ -28,9 +32,10 @@ bot.on('message:text', async (ctx) => {
         
         if (match && match[1]) {
             const targetUserId = match[1];
+            assignedPlans[targetUserId] = { diet: text, workout: 'برنامه اختصاصی توسط متخصص ارسال شد.' };
             try {
-                await bot.api.sendMessage(targetUserId, `🥗 پاسخ برنامه رژیم و تمرین از طرف متخصص:\n\n${text}`);
-                await ctx.reply('✅ برنامه با موفقیت برای کاربر ارسال شد.');
+                await bot.api.sendMessage(targetUserId, `🌟 **برنامه جدید شما از طرف متخصص آماده شد:**\n\n${text}`);
+                await ctx.reply('✅ برنامه با موفقیت برای کاربر ارسال شد و در مینی‌اپ او ذخیره گردید.');
             } catch (err) {
                 await ctx.reply('❌ خطا در ارسال پیام به کاربر.');
             }
@@ -39,33 +44,70 @@ bot.on('message:text', async (ctx) => {
     }
 });
 
-// ۳. دریافت اطلاعات کامل از مینی‌اپ (شامل تغذیه، ورزش و آلرژی‌ها)
+// ۳. دریافت ثبت‌نام از مینی‌اپ
 app.post('/api/submit-diet', async (req, res) => {
     try {
         const { userId, userName, goal, age, gender, height, weight, activity, allergies } = req.body;
+        
+        // ذخیره یا آپدیت کاربر در لیست
+        const existingIndex = usersSubmissions.findIndex(u => u.userId == userId);
+        const userData = { userId, userName, goal, age, gender, height, weight, activity, allergies, date: new Date().toLocaleDateString('fa-IR') };
+        
+        if (existingIndex >= 0) {
+            usersSubmissions[existingIndex] = userData;
+        } else {
+            usersSubmissions.push(userData);
+        }
 
         await bot.api.sendMessage(
             ADMIN_CHAT_ID,
-            `📩 درخواست جدید رژیم و ورزش از مینی‌اپ!\n\n` +
+            `📩 **درخواست جدید رژیم و ورزش!**\n\n` +
             `👤 نام: ${userName || 'ثبت نشده'}\n` +
             `🆔 Client_ID: ${userId}\n` +
             `🎯 هدف: ${goal}\n` +
-            `📅 سن: ${age} سال\n` +
-            `🚻 جنسیت: ${gender}\n` +
-            `📏 قد: ${height} سانتی‌متر\n` +
-            `⚖️ وزن: ${weight} کیلوگرم\n` +
-            `🏃‍♂️ سطح تحرک: ${activity}\n` +
-            `⚠️ محدودیت/آلرژی: ${allergies || 'ندارد'}`
+            `📅 سن: ${age} سال | 🚻 جنسیت: ${gender}\n` +
+            `📏 قد: ${height} سانتی‌متر | ⚖️ وزن: ${weight} کیلوگرم\n` +
+            `🏃‍♂️ تحرک: ${activity}\n` +
+            `⚠️ آلرژی: ${allergies || 'ندارد'}`
         );
 
         res.status(200).json({ success: true });
     } catch (error) {
-        console.error('Error handling WebApp data:', error);
+        console.error('Error:', error);
         res.status(500).json({ success: false });
     }
 });
 
-// ۴. طراحی گرافیکی و پیشرفته مینی‌اپ (تغذیه + ورزش + چیت‌دی + پروفایل)
+// ۴. ثبت برنامه توسط ادمین از داخل مینی‌اپ
+app.post('/api/admin-assign-plan', async (req, res) => {
+    try {
+        const { adminId, targetUserId, dietPlan, workoutPlan } = req.body;
+        if (Number(adminId) !== ADMIN_CHAT_ID) {
+            return res.status(403).json({ success: false, message: 'Unauthorized' });
+        }
+
+        assignedPlans[targetUserId] = { diet: dietPlan, workout: workoutPlan };
+
+        // ارسال به کاربر در تلگرام
+        await bot.api.sendMessage(targetUserId, `🎉 **برنامه تخصصی جدید شما ثبت شد!**\n\n🥗 **تغذیه:**\n${dietPlan}\n\n🏋️‍♂️ **ورزش:**\n${workoutPlan}`);
+        res.status(200).json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ۵. دریافت لیست کاربران برای ادمین
+app.get('/api/admin-users', (req, res) => {
+    res.json({ users: usersSubmissions, plans: assignedPlans });
+});
+
+// ۶. دریافت برنامه کاربر خاص
+app.get('/api/get-user-plan/:userId', (req, res) => {
+    const userId = req.params.userId;
+    res.json(assignedPlans[userId] || { notFound: true });
+});
+
+// ۷. طراحی فوق‌العاده زیبا، لوکس و مدرن مینی‌اپ (UI/UX لاکچری)
 app.get('/miniapp', (req, res) => {
     res.send(`
     <!DOCTYPE html>
@@ -73,188 +115,222 @@ app.get('/miniapp', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>اپلیکیشن رژیم و تناسب اندام</title>
+        <title>کلینیک تخصصی تناسب اندام</title>
         <script src="https://telegram.org/js/telegram-web-app.js"></script>
         <style>
             :root {
-                --bg-color: var(--tg-theme-bg-color, #0f172a);
-                --card-bg: var(--tg-theme-secondary-bg-color, #1e293b);
-                --text-color: var(--tg-theme-text-color, #f8fafc);
-                --hint-color: var(--tg-theme-hint-color, #94a3b8);
-                --primary-color: var(--tg-theme-button-color, #3b82f6);
-                --primary-text: var(--tg-theme-button-text-color, #ffffff);
+                --bg: #090d16;
+                --card-bg: rgba(30, 41, 59, 0.7);
+                --card-border: rgba(255, 255, 255, 0.08);
+                --text: #f8fafc;
+                --hint: #94a3b8;
+                --primary: #6366f1;
+                --primary-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+                --accent: #10b981;
             }
             body {
                 font-family: system-ui, -apple-system, sans-serif;
-                background-color: var(--bg-color);
-                color: var(--text-color);
+                background-color: var(--bg);
+                background-image: radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), transparent 50%),
+                                  radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.1), transparent 50%);
+                color: var(--text);
                 margin: 0;
-                padding: 14px;
+                padding: 16px;
                 padding-bottom: 90px;
+                min-height: 100vh;
             }
             .header {
                 text-align: center;
-                margin-bottom: 16px;
+                margin-bottom: 20px;
+                animation: fadeIn 0.5s ease;
             }
             .header h1 {
-                font-size: 20px;
+                font-size: 22px;
+                font-weight: 800;
                 margin: 0;
-                color: var(--primary-color);
+                background: var(--primary-gradient);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
             }
             .header p {
-                font-size: 12px;
-                color: var(--hint-color);
-                margin: 4px 0 0 0;
+                font-size: 13px;
+                color: var(--hint);
+                margin: 6px 0 0 0;
             }
-            /* تب‌های پایین/بالا */
+            /* نوار تب‌ها */
             .tabs {
                 display: flex;
                 background: var(--card-bg);
-                border-radius: 12px;
-                padding: 4px;
-                margin-bottom: 16px;
-                box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-                overflow-x: auto;
+                backdrop-filter: blur(12px);
+                border: 1px solid var(--card-border);
+                border-radius: 16px;
+                padding: 5px;
+                margin-bottom: 20px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.3);
             }
             .tab-btn {
                 flex: 1;
-                padding: 8px 4px;
+                padding: 10px 6px;
                 text-align: center;
                 border: none;
                 background: transparent;
-                color: var(--text-color);
-                font-size: 12px;
-                font-weight: 600;
-                border-radius: 8px;
+                color: var(--hint);
+                font-size: 13px;
+                font-weight: 700;
+                border-radius: 12px;
                 cursor: pointer;
-                transition: 0.3s;
-                white-space: nowrap;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             }
             .tab-btn.active {
-                background: var(--primary-color);
-                color: var(--primary-text);
+                background: var(--primary-gradient);
+                color: #ffffff;
+                box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
             }
             .tab-content {
                 display: none;
+                animation: fadeIn 0.4s ease;
             }
             .tab-content.active {
                 display: block;
             }
-            /* اسکرول روزهای هفته */
-            .days-scroll {
-                display: flex;
-                gap: 6px;
-                overflow-x: auto;
-                padding-bottom: 8px;
-                margin-bottom: 12px;
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(8px); }
+                to { opacity: 1; transform: translateY(0); }
             }
-            .day-btn {
-                padding: 6px 14px;
-                background: var(--card-bg);
-                border: 1px solid rgba(255,255,255,0.1);
-                border-radius: 16px;
-                color: var(--text-color);
-                font-size: 12px;
-                white-space: nowrap;
-                cursor: pointer;
-            }
-            .day-btn.active {
-                background: var(--primary-color);
-                color: var(--primary-text);
-                border-color: transparent;
-            }
+            /* کارت‌های شیشه‌ای */
             .card {
                 background: var(--card-bg);
-                border-radius: 14px;
-                padding: 14px;
-                margin-bottom: 12px;
-                box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-                border-right: 4px solid var(--primary-color);
+                backdrop-filter: blur(12px);
+                border: 1px solid var(--card-border);
+                border-radius: 20px;
+                padding: 18px;
+                margin-bottom: 16px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.2);
             }
             .card-title {
-                font-weight: bold;
-                font-size: 14px;
-                margin-bottom: 4px;
-                color: var(--primary-color);
+                font-weight: 700;
+                font-size: 15px;
+                margin-bottom: 8px;
+                color: #818cf8;
+                display: flex;
+                align-items: center;
+                gap: 6px;
             }
             .card-desc {
                 font-size: 13px;
-                color: var(--hint-color);
+                color: var(--hint);
                 margin: 0;
-                line-height: 1.4;
+                line-height: 1.6;
             }
-            /* بخش فرم */
+            /* دکمه‌های روزهای هفته */
+            .days-scroll {
+                display: flex;
+                gap: 8px;
+                overflow-x: auto;
+                padding-bottom: 10px;
+                margin-bottom: 16px;
+                scrollbar-width: none;
+            }
+            .days-scroll::-webkit-scrollbar { display: none; }
+            .day-btn {
+                padding: 8px 16px;
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: 20px;
+                color: var(--hint);
+                font-size: 13px;
+                font-weight: 600;
+                white-space: nowrap;
+                cursor: pointer;
+                transition: 0.3s;
+            }
+            .day-btn.active {
+                background: var(--primary-gradient);
+                color: #fff;
+                border-color: transparent;
+                box-shadow: 0 4px 12px rgba(99, 102, 241,.3);
+            }
+            /* فرم‌ها */
             .form-group {
-                margin-bottom: 12px;
+                margin-bottom: 14px;
             }
             label {
                 display: block;
-                margin-bottom: 4px;
+                margin-bottom: 6px;
                 font-weight: 600;
                 font-size: 12px;
+                color: var(--hint);
             }
             input, select, textarea {
                 width: 100%;
-                padding: 10px;
-                border: 1px solid rgba(255,255,255,0.1);
-                border-radius: 8px;
-                box-sizing: border-box;
-                background-color: var(--bg-color);
-                color: var(--text-color);
-                font-size: 13px;
-            }
-            textarea { resize: vertical; height: 60px; }
-            .submit-btn {
-                width: 100%;
                 padding: 12px;
-                background-color: var(--primary-color);
-                color: var(--primary-text);
-                border: none;
-                border-radius: 10px;
-                font-weight: bold;
-                font-size: 15px;
-                margin-top: 10px;
-                cursor: pointer;
-                box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+                border: 1px solid var(--card-border);
+                border-radius: 12px;
+                box-sizing: border-box;
+                background-color: rgba(15, 23, 42, 0.6);
+                color: var(--text);
+                font-size: 13px;
+                outline: none;
+                transition: 0.3s;
             }
-            /* بنرها */
-            .banner {
-                background: linear-gradient(135deg, #f59e0b, #d97706);
-                color: #fff;
-                padding: 16px;
+            input:focus, select:focus, textarea:focus {
+                border-color: #6366f1;
+                box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            }
+            textarea { resize: vertical; height: 70px; }
+            .btn {
+                width: 100%;
+                padding: 14px;
+                background: var(--primary-gradient);
+                color: #ffffff;
+                border: none;
                 border-radius: 14px;
-                text-align: center;
+                font-weight: 700;
+                font-size: 15px;
+                cursor: pointer;
+                box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+                transition: 0.3s;
+            }
+            .btn:active { transform: scale(0.98); }
+            /* پنل ادمین */
+            .admin-user-box {
+                background: rgba(15, 23, 42, 0.8);
+                border: 1px solid rgba(99, 102, 241, 0.3);
+                border-radius: 16px;
+                padding: 14px;
                 margin-bottom: 12px;
             }
-            .banner.workout {
-                background: linear-gradient(135deg, #10b981, #059669);
-            }
-            .banner h3 { margin: 0 0 6px 0; font-size: 16px; }
-            .banner p { margin: 0; font-size: 12px; opacity: 0.9; line-height: 1.5; }
+            .admin-user-box h4 { margin: 0 0 6px 0; color: #a5b4fc; font-size: 14px; }
+            .admin-user-box p { margin: 2px 0; font-size: 12px; color: var(--hint); }
         </style>
     </head>
     <body>
 
         <div class="header">
-            <h1>کلینیک تخصصی رژیم و تمرین</h1>
-            <p>برنامه غذایی، اصول رژیم‌درمانی و برنامه ورزشی علمی</p>
+            <h1>کلینیک تناسب اندام پادین</h1>
+            <p>سیستم هوشمند رژیم‌درمانی، تمرین و پایش سلامت</p>
         </div>
 
         <!-- نوار تب‌ها -->
-        .tabs {
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('diet', this)">🥗 تغذیه</button>
+        <div class="tabs" id="mainTabs">
+            <button class="tab-btn active" onclick="switchTab('myplan', this)">🌟 برنامه من</button>
+            <button class="tab-btn" onclick="switchTab('diet', this)">🥗 تغذیه</button>
             <button class="tab-btn" onclick="switchTab('workout', this)">🏋️‍♂️ ورزش</button>
-            <button class="tab-btn" onclick="switchTab('cheat', this)">🍔 چیت‌دی</button>
             <button class="tab-btn" onclick="switchTab('profile', this)">👤 پروفایل</button>
         </div>
 
-        <!-- تب اول: برنامه غذایی و رژیم‌درمانی -->
-        <div id="diet-tab" class="tab-content active">
-            <div class="banner">
-                <h3>💧 راهنمای آب و درشت‌مغذی‌ها</h3>
-                <p>روزانه حداقل ۳۵ میلی‌لیتر آب به ازای هر کیلوگرم وزن بدن بنوشید. تعادل پروتئین و فیبر کلید موفقیت شماست.</p>
+        <!-- تب ۱: برنامه اختصاصی من -->
+        <div id="myplan-tab" class="tab-content active">
+            <div class="card" style="text-align: center; padding: 24px;">
+                <h3 style="color: #34d399; margin-top:0;">📋 وضعیت برنامه اختصاصی شما</h3>
+                <div id="user-assigned-plan" style="text-align: right; margin-top: 14px; font-size: 13px; line-height: 1.6;">
+                    در حال بارگذاری برنامه از سرور...
+                </div>
             </div>
+        </div>
+
+        <!-- تب ۲: تغذیه پیش‌فرض -->
+        <div id="diet-tab" class="tab-content">
             <div class="days-scroll">
                 <button class="day-btn active" onclick="selectDay('saturday', this)">شنبه</button>
                 <button class="day-btn" onclick="selectDay('sunday', this)">یکشنبه</button>
@@ -267,12 +343,8 @@ app.get('/miniapp', (req, res) => {
             <div id="meals-container"></div>
         </div>
 
-        <!-- تب دوم: برنامه ورزشی -->
+        <!-- تب ۳: ورزش پیش‌فرض -->
         <div id="workout-tab" class="tab-content">
-            <div class="banner workout">
-                <h3>🔥 برنامه تمرینی هفته</h3>
-                <p>تمرینات با وزنه همراه با هوازی منظم برای چربی‌سوزی و حفظ عضلات.</p>
-            </div>
             <div class="days-scroll">
                 <button class="day-btn active" onclick="selectWorkout('w_sat', this)">شنبه</button>
                 <button class="day-btn" onclick="selectWorkout('w_sun', this)">یکشنبه</button>
@@ -285,32 +357,25 @@ app.get('/miniapp', (req, res) => {
             <div id="workout-container"></div>
         </div>
 
-        <!-- تب سوم: چیت‌دی -->
-        <div id="cheat-tab" class="tab-content">
-            <div class="banner" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9);">
-                <h3>🍕 روز آزاد هوشمند (Cheat Meal)</h3>
-                <p>انعطاف در رژیم برای حفظ سلامت روان و جلوگیری از افت متابولیسم.</p>
-            </div>
-            <div class="card">
-                <div class="card-title">🎯 اصول علمی چیت‌دی:</div>
-                <p class="card-desc">
-                    • به جای کل روز، فقط **یک وعده** را به غذای دلخواه اختصاص دهید.<br>
-                    • حتماً پیش از وعده آزاد، آب کافی بنوشید تا کنترل اشتها حفظ شود.<br>
-                    • روز بعد از چیت‌دی، تمرین هوازی یا پیاده‌روی ناشتا فراموش نشود.
-                </p>
-            </div>
-        </div>
-
-        <!-- تب چهارم: پروفایل و فرم ارسال اطلاعات -->
+        <!-- تب ۴: پروفایل و فرم ارسال اطلاعات / پنل ادمین -->
         <div id="profile-tab" class="tab-content">
-            <div class="card">
+            <div id="admin-panel-container" style="display:none;">
+                <div class="card" style="border-color: #6366f1;">
+                    <div class="card-title">🛡️ پنل مدیریت ادمین</div>
+                    <p class="card-desc">لیست کاربران ثبت‌نام کرده و ارسال برنامه اختصاصی:</p>
+                    <div id="admin-users-list" style="margin-top: 12px;">بارگذاری کاربران...</div>
+                </div>
+            </div>
+
+            <div id="user-form-container" class="card">
+                <div class="card-title">📝 ثبت و ویرایش مشخصات</div>
                 <form id="dietForm">
                     <div class="form-group">
                         <label>🎯 هدف اصلی:</label>
                         <select id="goal" required>
                             <option value="کاهش وزن">📉 کاهش وزن و چربی‌سوزی</option>
                             <option value="افزایش وزن">📈 افزایش حجم و عضلات</option>
-                            <option value="تثبیت و سلامت">⚖️ تثبیت وزن و بهبود سلامت</option>
+                            <option value="تثبیت وزن">⚖️ تثبیت و تناسب اندام</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -335,16 +400,16 @@ app.get('/miniapp', (req, res) => {
                     <div class="form-group">
                         <label>🏃‍♂️ سطح فعالیت بدنی:</label>
                         <select id="activity" required>
-                            <option value="کم‌تحرک">کم‌تحرک (کار پشت‌میزی)</option>
-                            <option value="متوسط">متوسط (ورزش سبک ۲ تا ۳ روز در هفته)</option>
-                            <option value="پرتحرک">پرتحرک (ورزش حرفه‌ای ۴ تا ۵ روز)</option>
+                            <option value="کم‌تحرک">کم‌تحرک (پشت‌میزی)</option>
+                            <option value="متوسط">متوسط (ورزش سبک ۲-۳ روز)</option>
+                            <option value="پرتحرک">پرتحرک (ورزش حرفه‌ای)</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>⚠️ آلرژی یا محدودیت غذایی (اختیاری):</label>
-                        <textarea id="allergies" placeholder="مثلاً حساسیت به لبنیات، دیسک کمر، و..."></textarea>
+                        <label>⚠️ محدودیت یا آلرژی:</label>
+                        <textarea id="allergies" placeholder="مثلاً دیسک کمر، حساسیت به لبنیات..."></textarea>
                     </div>
-                    <button type="submit" class="submit-btn">ارسال اطلاعات کامل برای متخصص</button>
+                    <button type="submit" class="btn">ثبت و ارسال اطلاعات</button>
                 </form>
             </div>
         </div>
@@ -352,154 +417,153 @@ app.get('/miniapp', (req, res) => {
         <script>
             const tg = window.Telegram.WebApp;
             tg.expand();
+            const currentUser = tg.initDataUnsafe?.user || { id: 7279065642, first_name: 'ادمین سیستم' };
+            const ADMIN_ID = 7279065642;
+
+            // تشخیص ادمین و باز کردن پنل مدیریت
+            if (currentUser.id == ADMIN_ID) {
+                document.getElementById('admin-panel-container').style.display = 'block';
+                loadAdminData();
+            }
+
+            loadUserPlan();
 
             function switchTab(tabName, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-                document.querySelectorAll('.tab-btn').forEach(el => {
-                    el.classList.remove('active');
-                    el.style.background = 'transparent';
-                    el.style.color = 'var(--text-color)';
-                });
-                
+                document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
                 document.getElementById(tabName + '-tab').classList.add('active');
-                if(btn) {
-                    btn.classList.add('active');
-                    btn.style.background = 'var(--primary-color)';
-                    btn.style.color = 'var(--primary-text)';
+                if(btn) btn.classList.add('active');
+            }
+
+            async function loadUserPlan() {
+                try {
+                    const res = await fetch(\`/api/get-user-plan/\${currentUser.id}\`);
+                    const data = await res.json();
+                    const container = document.getElementById('user-assigned-plan');
+                    if (data.notFound) {
+                        container.innerHTML = \`<p style="color:var(--hint)">هنوز برنامه‌ای از طرف متخصص برای شما ثبت نشده است. لطفاً فرم پروفایل را پر کنید تا بررسی شود.</p>\`;
+                    } else {
+                        container.innerHTML = \`
+                            <div style="margin-bottom: 12px;"><strong style="color:#818cf8;">🥗 برنامه تغذیه:</strong><br>\${data.diet}</div>
+                            <div><strong style="color:#34d399;">🏋️‍♂️ برنامه ورزشی:</strong><br>\${data.workout}</div>
+                        \`;
+                    }
+                } catch(e) {
+                    console.error(e);
                 }
             }
 
-            // اطلاعات برنامه غذایی
+            async function loadAdminData() {
+                try {
+                    const res = await fetch('/api/admin-users');
+                    const data = await res.json();
+                    const listContainer = document.getElementById('admin-users-list');
+                    
+                    if (data.users.length === 0) {
+                        listContainer.innerHTML = '<p style="color:var(--hint)">هنوز کاربری فرمی ثبت نکرده است.</p>';
+                        return;
+                    }
+
+                    listContainer.innerHTML = data.users.map(u => \`
+                        <div class="admin-user-box">
+                            <h4>👤 \${u.userName} (ID: \${u.userId})</h4>
+                            <p>🎯 هدف: \${u.goal} | 📅 سن: \${u.age} | 🚻 جنسیت: \${u.gender}</p>
+                            <p>📏 قد: \${u.height} | ⚖️ وزن: \${u.weight} | تحرک: \${u.activity}</p>
+                            <p>⚠️ آلرژی: \${u.allergies || 'ندارد'}</p>
+                            <div style="margin-top: 10px;">
+                                <textarea id="diet_\${u.userId}" placeholder="متن برنامه غذایی..."></textarea>
+                                <textarea id="workout_\${u.userId}" placeholder="متن برنامه ورزشی..." style="margin-top:6px;"></textarea>
+                                <button class="btn" style="margin-top:8px; padding:8px; font-size:13px;" onclick="sendPlanToUser(\${u.userId})">ارسال برنامه برای این کاربر</button>
+                            </div>
+                        </div>
+                    \`).join('');
+                } catch(e) {
+                    console.error(e);
+                }
+            }
+
+            async function sendPlanToUser(targetId) {
+                const dietPlan = document.getElementById(\`diet_\${targetId}\`).value;
+                const workoutPlan = document.getElementById(\`workout_\${targetId}\`).value;
+
+                if (!dietPlan && !workoutPlan) {
+                    alert('لطفاً حداقل یکی از برنامه‌ها را بنویسید.');
+                    return;
+                }
+
+                const res = await fetch('/api/admin-assign-plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ adminId: currentUser.id, targetUserId: targetId, dietPlan, workoutPlan })
+                });
+
+                if (res.ok) {
+                    alert('برنامه با موفقیت ثبت و برای کاربر ارسال شد!');
+                    loadAdminData();
+                } else {
+                    alert('خطا در ارسال برنامه.');
+                }
+            }
+
+            // اطلاعات پیش‌فرض تغذیه و ورزش
             const weeklyDiet = {
-                saturday: [
-                    { title: "🌅 صبحانه", desc: "تخم‌مرغ آب‌پز ۲ عدد + نان جو ۱ کف دست + چای سبز" },
-                    { title: "🥗 ناهار", desc: "سینه مرغ گریل شده ۲۰۰ گرم + برنج قهوه‌ای ۶ قاشق" },
-                    { title: "🍎 میان‌وعده", desc: "یک عدد سیب + ۱۰ عدد بادام درختی" },
-                    { title: "🌙 شام", desc: "سوپ سبزیجات رژیمی + سالاد فصل با روغن زیتون" }
-                ],
-                sunday: [
-                    { title: "🌅 صبحانه", desc: "املت گوجه‌فرنگی کم‌روغن + نان سنگک سبوس‌دار" },
-                    { title: "🥗 ناهار", desc: "خورشت قیمه کم‌چرب + برنج ایرانی ۵ قاشق" },
-                    { title: "🍎 میان‌وعده", desc: "موز کوچک + یک فنجان قهوه تلخ" },
-                    { title: "🌙 شام", desc: "ماهی تن آبکش شده + خیارشور و کاهو" }
-                ],
-                monday: [
-                    { title: "🌅 صبحانه", desc: "پنیر کم‌چرب + گردو ۲ عدد + چای" },
-                    { title: "🥗 ناهار", desc: "گوشت گوساله کبابی یا آبپز + سبزیجات بخارپز" },
-                    { title: "🍎 میان‌وعده", desc: "توت خشک یا خرما (۲ عدد)" },
-                    { title: "🌙 شام", desc: "املت قارچ و اسفناج + سالاد شیرازی" }
-                ],
-                tuesday: [
-                    { title: "🌅 صبحانه", desc: "فرنی با شیر کم‌چرب و عسل طبیعی" },
-                    { title: "🥗 ناهار", desc: "عدسی با سیب‌زمینی کوچک + لیموترش تازه" },
-                    { title: "🍎 میان‌وعده", desc: "پرتقال یا مرکبات فصل" },
-                    { title: "🌙 شام", desc: "مرغ آب‌پز ریش‌ریش شده با سالاد کلم" }
-                ],
-                wednesday: [
-                    { title: "🌅 صبحانه", desc: "تخم‌مرغ نیمرو در تابه رژیمی + نان جو" },
-                    { title: "🥗 ناهار", desc: "خورشت قورمه‌سبزی کم‌گوشت و کم‌روغن + برنج" },
-                    { title: "🍎 میان‌وعده", desc: "مشتری مغزیجات (پسته و بادام)" },
-                    { title: "🌙 شام", desc: "کوکو سبزی رژیمی (پخت در فر)" }
-                ],
-                thursday: [
-                    { title: "🌅 صبحانه", desc: "ارده و شیره انگور به مقدار کم + نان سبوس‌دار" },
-                    { title: "🥗 ناهار", desc: "استیک بوقلمون یا مرغ + سیب‌زمینی تنوری" },
-                    { title: "🍎 میان‌وعده", desc: "انار یا میوه فصل" },
-                    { title: "🌙 شام", desc: "سالاد سزار رژیمی بدون سس مایونز سنگین" }
-                ],
-                friday: [
-                    { title: "🌅 صبحانه", desc: "املت اسفناج + چای دارچین" },
-                    { title: "🥗 ناهار", desc: "جوجه کباب خانگی بدون چربی اضافه + برنج" },
-                    { title: "🍎 میان‌وعده", desc: "سالاد میوه تازه" },
-                    { title: "🌙 شام", desc: "خوراک لوبیا چیتی با قارچ و لیمو" }
-                ]
+                saturday: [{title: "🌅 صبحانه", desc: "تخم‌مرغ آب‌پز + نان جو + چای سبز"}, {title: "🥗 ناهار", desc: "سینه مرغ گریل + برنج قهوه‌ای"}],
+                sunday: [{title: "🌅 صبحانه", desc: "املت گوجه + سنگک"}, {title: "🥗 ناهار", desc: "خورشت قیمه کم‌چرب + برنج"}],
+                monday: [{title: "🌅 صبحانه", desc: "پنیر + گردو"}, {title: "🥗 ناهار", desc: "گوشت کبابی + سبزیجات"}],
+                tuesday: [{title: "🌅 صبحانه", desc: "فرنی رژیمی"}, {title: "🥗 ناهار", desc: "عدسی با لیمو"}],
+                wednesday: [{title: "🌅 صبحانه", desc: "نیمرو رژیمی"}, {title: "🥗 ناهار", desc: "قورمه‌سبزی کم‌روغن"}],
+                thursday: [{title: "🌅 صبحانه", desc: "ارده و شیره"}, {title: "🥗 ناهار", desc: "استیک بوقلمون"}],
+                friday: [{title: "🌅 صبحانه", desc: "املت اسفناج"}, {title: "🥗 ناهار", desc: "جوجه کباب خانگی"}]
             };
 
-            // اطلاعات برنامه ورزشی
             const weeklyWorkout = {
-                w_sat: [
-                    { title: "💪 بالاتنه (سینه و پشت‌بازو)", desc: "پرس بالا سینه دمبل (۳ ست ۱۰ تایی) + شنا سوئدی (۳ ست تا خرابی) + پشت‌بازو سیم‌کش (۳ ست ۱۲ تایی)" },
-                    { title: "🏃‍♂️ هوازی", desc: "۲۰ دقیقه تردمیل با شیب ملایم بعد از تمرین" }
-                ],
-                w_sun: [
-                    { title: "🦵 پایین‌تنه (پا و باسن)", desc: "اسکات با هالت یا دمبل (۴ ست ۱۰ تایی) + لانگ دمبل (۳ ست هر پا ۱۲ تایی) + پشت پا دستگاه (۳ ست ۱۲ تایی)" },
-                    { title: "🧘‍♂️ ریکاوری", desc: "حرکات کششی و انعطاف‌پذیری (۱۵ دقیقه)" }
-                ],
-                w_mon: [
-                    { title: "🏃‍♂️ روز هوازی تخصصی", desc: "۴۵ دقیقه دویدن ملایم یا دوچرخه ثابت + طناب زدن اصولی" }
-                ],
-                w_tue: [
-                    { title: "🦾 بالاتنه (سرشانه و زیربغل)", desc: "بارفیکس یا زیربغل سیم‌کش (۴ ست ۱۰ تایی) + سرشانه دمبل نشسته (۳ ست ۱۲ تایی) + نشر جانب (۳ ست ۱۵ تایی)" },
-                    { title: "🛡️ شکم و پهلو", desc: "پلانک (۳ ست ۶۰ ثانیه) + کرانچ شکم (۳ ست ۱۵ تایی)" }
-                ],
-                w_wed: [
-                    { title: "🦵 پایین‌تنه (مخصوص عضلات پشت پا و ساق)", desc: "دالیگ‌لیفت رومانیایی با دمبل (۴ ست ۱۰ تایی) + ساق پا ایستاده (۴ ست ۱۵ تایی)" }
-                ],
-                w_thu: [
-                    { title: "⚡ فول‌بادی سبک / فانکشنال", desc: "تمرینات با وزن بدن، کیتل‌بل و حرکات ترکیبی برای چربی‌سوزی کل بدن (۳۵ دقیقه)" }
-                ],
-                w_fri: [
-                    { title: "🌿 استراحت مطلق (Rest Day)", desc: "بدون تمرین سنگین؛ استراحت کامل عضلات و پیاده‌روی سبک آزاد." }
-                ]
+                w_sat: [{title: "💪 بالاتنه", desc: "پرس بالا سینه + شنا سوئدی"}],
+                w_sun: [{title: "🦵 پایین‌تنه", desc: "اسکات + لانگ دمبل"}],
+                w_mon: [{title: "🏃‍♂️ هوازی", desc: "۴۵ دقیقه دویدن ملایم"}],
+                w_tue: [{title: "🦾 سرشانه و زیربغل", desc: "بارفیکس + سرشانه دمبل"}],
+                w_wed: [{title: "🦵 پشت پا", desc: "دالیگ‌لیفت رومانیایی"}],
+                w_thu: [{title: "⚡ فول‌بادی", desc: "تمرینات فانکشنال و چربی‌سوزی"}],
+                w_fri: [{title: "🌿 استراحت", desc: "پیاده‌روی سبک آزاد"}]
             };
 
             function selectDay(dayKey, btn) {
                 document.querySelectorAll('#diet-tab .day-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                const container = document.getElementById('meals-container');
-                const meals = weeklyDiet[dayKey] || [];
-                container.innerHTML = meals.map(m => \`
-                    <div class="card">
-                        <div class="card-title">\${m.title}</div>
-                        <p class="card-desc">\${m.desc}</p>
-                    </div>
+                document.getElementById('meals-container').innerHTML = (weeklyDiet[dayKey] || []).map(m => \`
+                    <div class="card"><div class="card-title">\${m.title}</div><p class="card-desc">\${m.desc}</p></div>
                 \`).join('');
             }
-
             function selectWorkout(dayKey, btn) {
                 document.querySelectorAll('#workout-tab .day-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                const container = document.getElementById('workout-container');
-                const workouts = weeklyWorkout[dayKey] || [];
-                container.innerHTML = workouts.map(w => \`
-                    <div class="card" style="border-right-color: #10b981;">
-                        <div class="card-title" style="color: #10b981;">\${w.title}</div>
-                        <p class="card-desc">\${w.desc}</p>
-                    </div>
+                document.getElementById('workout-container').innerHTML = (weeklyWorkout[dayKey] || []).map(w => \`
+                    <div class="card" style="border-right: 4px solid var(--accent);"><div class="card-title" style="color:var(--accent);">\${w.title}</div><p class="card-desc">\${w.desc}</p></div>
                 \`).join('');
             }
-
             selectDay('saturday', document.querySelector('#diet-tab .day-btn'));
             selectWorkout('w_sat', document.querySelector('#workout-tab .day-btn'));
 
-            // ارسال فرم کامل پروفایل
             document.getElementById('dietForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
-                
-                const user = tg.initDataUnsafe?.user || {};
                 const data = {
-                    userId: user.id || 7279065642,
-                    userName: user.first_name || 'کاربر',
+                    userId: currentUser.id,
+                    userName: currentUser.first_name || 'کاربر',
                     goal: document.getElementById('goal').value,
                     age: document.getElementById('age').value,
                     gender: document.getElementById('gender').value,
-                    height: document.getElementById('height').value,
+                    height: document.getElementById('height'].value,
                     weight: document.getElementById('weight').value,
                     activity: document.getElementById('activity').value,
                     allergies: document.getElementById('allergies').value
                 };
-
                 const res = await fetch('/api/submit-diet', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-
                 if (res.ok) {
-                    tg.showAlert('اطلاعات کامل و پرسشنامه شما با موفقیت ثبت و برای متخصص ارسال شد!');
-                    tg.close();
-                } else {
-                    alert('خطایی در ثبت اطلاعات رخ داد.');
+                    tg.showAlert('اطلاعات با موفقیت ثبت شد!');
+                    switchTab('myplan', document.querySelector('.tab-btn'));
                 }
             });
         </script>
@@ -508,11 +572,7 @@ app.get('/miniapp', (req, res) => {
     `);
 });
 
-// ۵. روشن کردن سرور و ربات
 bot.start();
-console.log('مینی‌اپ تخصصی رژیم و ورزش روشن شد...');
-
+console.log('مینی‌اپ با پنل مدیریت و ظاهر فوق‌العاده لوکس روشن شد...');
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server on port ${PORT}`));
