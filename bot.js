@@ -36,9 +36,7 @@ bot.callbackQuery(/^goal_(loss|gain)$/, async (ctx) => {
     userStates[userId].step = 'WAITING_FOR_AGE';
 
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(`✅ هدف شما انتخاب شد: **${goal}**\n\nلطفاً **سن** خود را به عدد وارد کنید:`, {
-        parse_mode: 'Markdown'
-    });
+    await ctx.editMessageText(`✅ هدف شما انتخاب شد: ${goal}\n\nلطفاً سن خود را به عدد وارد کنید:`);
 });
 
 // مدیریت پیام‌های متنی (سوالات مرحله‌ای و پاسخ ادمین)
@@ -55,7 +53,7 @@ bot.on('message:text', async (ctx) => {
         if (match && match[1]) {
             const targetUserId = match[1];
             try {
-                await bot.api.sendMessage(targetUserId, `🥗 **پاسخ برنامه رژیم شما از طرف متخصص:**\n\n${text}`);
+                await bot.api.sendMessage(targetUserId, `🥗 پاسخ برنامه رژیم شما از طرف متخصص:\n\n${text}`);
                 await ctx.reply('✅ رژیم با موفقیت برای کاربر ارسال شد.');
             } catch (err) {
                 await ctx.reply('❌ خطا در ارسال پیام به کاربر.');
@@ -70,14 +68,14 @@ bot.on('message:text', async (ctx) => {
     if (currentState === 'WAITING_FOR_AGE') {
         userStates[userId].age = text;
         userStates[userId].step = 'WAITING_FOR_GENDER';
-        await ctx.reply('👤 لطفاً **جنسیت** خود را وارد کنید (مثلاً: زن / مرد):');
+        await ctx.reply('لطفاً جنسیت خود را وارد کنید (مثلاً: زن / مرد):');
         return;
     }
 
     if (currentState === 'WAITING_FOR_GENDER') {
         userStates[userId].gender = text;
         userStates[userId].step = 'WAITING_FOR_HEIGHT';
-        await ctx.reply('📏 لطفاً **قد** خود را به سانتی‌متر وارد کنید (مثلاً: ۱۷۵):');
+        await ctx.reply('لطفاً قد خود را به سانتی‌متر وارد کنید (مثلاً: ۱۷۵):');
         return;
     }
 
@@ -85,18 +83,17 @@ bot.on('message:text', async (ctx) => {
         userStates[userId].height = text;
         const data = userStates[userId];
 
-        // ارسال خلاصه اطلاعات به ادمین (شما)
+        // ارسال اطلاعات به ادمین (بدون خطای مارک‌داون)
         try {
             await bot.api.sendMessage(
                 ADMIN_CHAT_ID,
-                `📩 **درخواست جدید رژیم غذایی!**\n\n` +
+                `📩 درخواست جدید رژیم غذایی!\n\n` +
                 `👤 نام: ${userName}\n` +
                 `🆔 Client_ID: ${userId}\n` +
                 `🎯 هدف: ${data.goal}\n` +
                 `📅 سن: ${data.age}\n` +
                 `🚻 جنسیت: ${data.gender}\n` +
-                `📏 قد: ${data.height} سانتی‌متر`,
-                { parse_mode: 'Markdown' }
+                `📏 قد: ${data.height} سانتی‌متر`
             );
 
             await ctx.reply('✅ اطلاعات شما با موفقیت ثبت و برای متخصص ارسال شد. به زودی برنامه رژیم شما آماده خواهد شد.');
@@ -118,7 +115,7 @@ bot.on('message:text', async (ctx) => {
 bot.start();
 console.log('ربات رژیم غذایی آماده به کار است...');
 
-// سرور وب داخلی برای پایداری روی Render
+// سرور وب برای Render
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Bot is running successfully!');
