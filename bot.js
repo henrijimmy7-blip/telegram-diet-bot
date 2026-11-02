@@ -1,7 +1,7 @@
 import { Bot } from 'grammy';
 import http from 'http';
 
-const bot = new Bot('9148283226:AAFCIHcv9OuVzaBMfC1Is1Uptd473SdofzM');
+const bot = new Bot('9016404137:AAEj85yDR8ax_WSJTccSKjpFr9FnXk8bsv8');
 
 // دستور شروع ربات
 bot.command('start', async (ctx) => {
