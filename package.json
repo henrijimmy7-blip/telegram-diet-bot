@@ -1,7 +1,10 @@
 {
   "name": "telegram-diet-bot",
   "version": "1.0.0",
-  "main": "api/bot.js",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
   "dependencies": {
     "grammy": "^1.21.1"
   }
