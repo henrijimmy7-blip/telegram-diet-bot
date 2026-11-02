@@ -1,13 +1,10 @@
 const { Bot, InlineKeyboard } = require('grammy');
-const express = require('express');
+const http = require('http');
 
-// توکن و آیدی مستقیماً داخل کد قرار گرفتند
 const BOT_TOKEN = '9016404137:AAEj85yDR8ax_WSJTccSKjpFr9FnXk8bsv8';
 const ADMIN_CHAT_ID = 7279065642;
 
 const bot = new Bot(BOT_TOKEN);
-const app = express();
-app.use(express.json());
 
 // ذخیره موقت اطلاعات کاربران در حال ثبت‌نام
 const userStates = {};
@@ -119,10 +116,15 @@ bot.on('message:text', async (ctx) => {
 
 // روشن کردن ربات تلگرام
 bot.start();
-console.log('ربات رژیم غذایی با فرم مرحله‌به‌مرحله روشن شد...');
+console.log('ربات رژیم غذایی آماده به کار است...');
 
-// سرور وب برای Render
+// سرور وب داخلی برای پایداری روی Render
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot is running successfully!');
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
