@@ -1,5 +1,5 @@
-import { Bot } from 'grammy';
-import http from 'http';
+const { Bot } = require('grammy');
+const http = require('http');
 
 const BOT_TOKEN = '9148283226:AAFCIHcv9OuVzaBMfC1Is1Uptd473SdofzM';
 const ADMIN_CHAT_ID = 7279065642; // آیدی عددی شما
